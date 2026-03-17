@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Payroll Calculator</title>
+<style>
+:root {
+  --accent: #1d4f73; --border: #b8c4ce; --header: #d0dfee;
+  --header2: #e4edf5; --issue: #fff3cd; --totals: #eef3f7;
+  --check: #ffe0e0; --minwage: #ff4444; --bg: #f8fafb;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font: 13px/1.45 "Segoe UI", Tahoma, sans-serif; color: #1a1a1a; background: var(--bg); }
+h1 { font-size: 22px; color: var(--accent); padding: 16px 20px 0; }
+h2 { font-size: 15px; color: var(--accent); margin: 18px 0 6px; }
+
+/* Drop zone */
+#drop-zone {
+  margin: 16px 20px; padding: 40px; border: 3px dashed var(--border);
+  border-radius: 12px; text-align: center; background: white;
+  transition: all 0.2s;
+}
+#drop-zone.drag-over { border-color: var(--accent); background: #e8f0f8; }
+#drop-zone p { font-size: 16px; color: #555; margin-bottom: 12px; }
+#drop-zone .sub { font-size: 12px; color: #888; }
+#file-input { margin-top: 10px; }
+
+/* Toolbar */
+.toolbar {
+  margin: 12px 20px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+}
+.toolbar button {
+  padding: 7px 16px; border: 1px solid var(--border); border-radius: 4px;
+  background: white; cursor: pointer; font-size: 13px;
+}
+.toolbar button:hover { background: var(--header2); }
+.toolbar button.primary { background: var(--accent); color: white; border-color: var(--accent); }
+.toolbar button.primary:hover { background: #164060; }
+.toolbar .status { font-size: 12px; color: #666; margin-left: auto; }
+
+/* Report */
+#report { padding: 0 20px 30px; display: none; }
+.info-box {
+  background: white; border: 1px solid var(--border); padding: 10px 14px;
+  margin-bottom: 14px; font-size: 12px; color: #555;
+}
+.info-box b { color: #333; }
+.info-box ul { margin: 4px 0 0 18px; }
+
+/* Dashboard */
+.dashboard {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px; margin-bottom: 14px;
+}
+.dash-card {
+  background: white; border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px 14px; text-align: center;
+}
+.dash-card .label { font-size: 10px; text-transform: uppercase; color: #888; letter-spacing: 0.5px; }
+.dash-card .value { font-size: 20px; font-weight: 700; color: var(--accent); margin-top: 2px; }
+.dash-card .sub { font-size: 10px; color: #aaa; margin-top: 2px; }
+
+/* Tables */
+table { border-collapse: collapse; width: 100%; background: white; margin-bottom: 8px; }
+th, td { border: 1px solid var(--border); padding: 4px 6px; text-align: center; font-size: 12px; }
+td:nth-child(2) { text-align: left; }
+thead th { background: var(--header2); font-weight: 700; }
+thead tr:first-child th { background: var(--header); }
+.notes-col { text-align: left !important; white-space: normal; color: #5f6b76; font-size: 11px; min-width: 180px; }
+.totals-row { background: var(--totals); font-weight: 700; }
+.issue-row { background: var(--issue); }
+.check-row { background: var(--check); }
+.minwage-flag { color: var(--minwage); font-weight: 700; }
+.match-ok { color: #2a7d2a; font-weight: 700; }
+.match-bad { color: var(--minwage); font-weight: 700; }
+
+/* Signature click */
+td.sig { cursor: pointer; user-select: none; }
+td.sig:hover { background: #e0e8f0; }
+
+/* Validation table */
+.val-table td { text-align: left; font-size: 11px; }
+.val-table td:nth-child(4) { text-align: center; font-weight: 700; }
+
+/* Tip analysis table */
+.tip-table td { font-size: 11px; }
+
+/* Print */
+@media print {
+  #drop-zone, .toolbar { display: none !important; }
+  body { background: white; }
+  #report { padding: 0 8px; }
+}
+/* Analyze button */
+.analyze-btn {
+  margin-top: 14px; padding: 12px 36px; font-size: 16px; font-weight: 700;
+  background: #1d4f73; color: white; border: none; border-radius: 8px;
+  cursor: pointer; transition: background 0.2s;
+}
+.analyze-btn:hover { background: #164060; }
+.analyze-btn:disabled { background: #aaa; cursor: not-allowed; 
+}
+</style>
+</head>
+<body>
+
+<h1>Payroll Calculator</h1>
+
+<div id="drop-zone">
+  <p>Drop both week CSV files here</p>
+  <p class="sub">Export each week's sheet from Excel as CSV, then drop them here together</p>
+  <input type="file" id="file-input" multiple accept=".csv">
+  <div id="file-list" style="margin-top:10px;font-size:12px;color:#333;"></div>
+  <button id="analyze-btn" class="analyze-btn" style="display:none" onclick="runAnalysis()">⚡ Analyze Payroll</button>
+</div>
+
+<div id="error-box" style="display:none;margin:12px 20px;padding:12px 16px;background:#fff0f0;border:2px solid #ff4444;border-radius:8px;font-size:13px;color:#cc0000;">
+  <b>⚠ Something went wrong:</b>
+  <pre id="error-detail" style="margin-top:6px;white-space:pre-wrap;font-size:11px;color:#880000;"></pre>
+</div>
+
+<div id="report">
+  <div class="toolbar">
+    <button class="primary" onclick="copyReport()">Copy Table for Excel</button>
+    <button onclick="location.reload()">New Payroll</button>
+    <span class="status" id="status"></span>
+  </div>
+  <div id="report-content"></div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════
+// CONFIG — edit these when rates change
+// ══════════════════════════════════════════════════════════════════
+const RATES = { server: 2.13, food_runner: 7.25, training: 7.25 };
+const SPECIAL_FOOD_RUNNER_RATES = { 'WILKS': 13.00 };
+const MINIMUM_WAGE = 7.25;
+const OT_THRESHOLD = 40;
+const OT_MULTIPLIER = 1.5;
+
+const SECTION_MAP = { "EMPLOYEE'S": 'server', 'FOOD RUNNER': 'food_runner', 'TRAINING': 'training' };
+const SECTION_LABELS = { server: "EMPLOYEE'S", food_runner: 'FOOD RUNNER', training: 'TRAINING' };
+const SECTION_ORDER = ['server', 'food_runner', 'training'];
+const SEPARATORS = new Set(['', '//////', '///', '///////////////']);
+
+// ══════════════════════════════════════════════════════════════════
+// PAYMENT METHOD STORAGE (localStorage)
+// ══════════════════════════════════════════════════════════════════
+function loadPayments() {
+  try { return JSON.parse(localStorage.getItem('payroll_pay') || '{}'); } catch { return {}; }
+}
+function savePayments(obj) {
+  localStorage.setItem('payroll_pay', JSON.stringify(obj));
+}
+function getPayment(emp) {
+  return loadPayments()[emp] || 'DD';
+}
+function togglePayment(emp) {
+  const p = loadPayments();
+  p[emp] = (p[emp] === 'CHECK') ? 'DD' : 'CHECK';
+  savePayments(p);
+  return p[emp];
+}
+
+// ══════════════════════════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════════════════════════
+function norm(s) { return (s || '').trim().toUpperCase().replace(/\s+/g, ' '); }
+function isSep(s) { const n = norm(s); return !n || SEPARATORS.has(n) || /^[\/\\\-\s]+$/.test(n); }
+function parseNum(s) {
+  const t = (s || '').trim().replace(/\$/g, '').replace(/,/g, '');
+  if (!t) return null;
+  const n = parseFloat(t);
+  return isNaN(n) ? null : n;
+}
+function fmtMoney(v) { return '$' + (v || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+function fmtHours(v) {
+  if (v == null || v === 0) return '0';
+  let s = v.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+  return s || '0';
+}
+function fmtPct(v) { return (v || 0).toFixed(1) + '%'; }
+function fmtRange(s, e) {
+  const pad = d => (d.getMonth()+1).toString().padStart(2,'0') + '/' + d.getDate().toString().padStart(2,'0');
+  return pad(s) + ' - ' + pad(e);
+}
+function fmtDate(d) {
+  return (d.getMonth()+1) + '/' + d.getDate();
+}
+function esc(s) {
+  const d = document.createElement('div'); d.textContent = s; return d.innerHTML;
+}
+function parseDate(s) {
+  const t = (s || '').trim();
+  if (!t) return null;
+  const parts = t.split('/');
+  if (parts.length < 3) return null;
+  let [m, d, y] = parts.map(Number);
+  if (y < 100) y += 2000;
+  if (isNaN(m) || isNaN(d) || isNaN(y)) return null;
+  return new Date(y, m - 1, d);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// CSV PARSER
+// ══════════════════════════════════════════════════════════════════
+function parseCSV(text) {
+  const rows = []; let row = []; let cell = ''; let inQuote = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuote) {
+      if (c === '"') {
+        if (text[i+1] === '"') { cell += '"'; i++; }
+        else inQuote = false;
+      } else cell += c;
+    } else {
+      if (c === '"') inQuote = true;
+      else if (c === ',') { row.push(cell); cell = ''; }
+      else if (c === '\n' || c === '\r') {
+        if (c === '\r' && text[i+1] === '\n') i++;
+        row.push(cell); cell = '';
+        if (row.some(c => c.trim())) rows.push(row);
+        row = [];
+      } else cell += c;
+    }
+  }
+  row.push(cell);
+  if (row.some(c => c.trim())) rows.push(row);
+  return rows;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// SHEET PARSING
+// ══════════════════════════════════════════════════════════════════
+function extractDayGroups(dateRow, metricRow) {
+  const groups = [];
+  let col = 1;
+  while (col + 2 < metricRow.length) {
+    const trio = [norm(metricRow[col] || ''), norm(metricRow[col+1] || ''), norm(metricRow[col+2] || '')];
+    if (trio[0] === 'HR' && trio[1] === 'TIPS' && trio[2] === 'BAR/FR') {
+      let day = null;
+      for (let idx = Math.max(0, col-1); idx < Math.min(col+4, dateRow.length); idx++) {
+        day = parseDate(dateRow[idx] || '');
+        if (day) break;
+      }
+      if (day) groups.push({ col, day });
+      col += 3;
+    } else col++;
+  }
+  return groups;
+}
+function parseSheet(filename, text) {
+  const rows = parseCSV(text);
+  const records = [], issues = [];
+
+  if (rows.length < 3) {
+    issues.push({ file: filename, emp: '', date: '', level: 'error', msg: 'Missing header rows' });
+    return { file: filename, start: new Date(), end: new Date(), records, issues };
+  }
+
+  // Auto-detect: find the row containing HR/TIPs/BAR/FR pattern
+  let metricRowIdx = -1;
+  for (let r = 0; r < Math.min(rows.length, 10); r++) {
+    for (let c = 0; c + 2 < (rows[r] || []).length; c++) {
+      if (norm(rows[r][c]) === 'HR' && norm(rows[r][c+1]) === 'TIPS' && norm(rows[r][c+2]) === 'BAR/FR') {
+        metricRowIdx = r;
+        break;
+      }
+    }
+    if (metricRowIdx >= 0) break;
+  }
+
+  if (metricRowIdx < 0) {
+    issues.push({ file: filename, emp: '', date: '', level: 'error', msg: 'No HR/TIPs/BAR/FR header found' });
+    return { file: filename, start: new Date(), end: new Date(), records, issues };
+  }
+
+  // Find date row: scan rows above the metric row for parseable dates
+  let dateRowIdx = metricRowIdx;
+  for (let r = metricRowIdx - 1; r >= Math.max(0, metricRowIdx - 3); r--) {
+    if (rows[r] && rows[r].some(c => parseDate(c) !== null)) {
+      dateRowIdx = r;
+      break;
+    }
+  }
+
+  const groups = extractDayGroups(rows[dateRowIdx], rows[metricRowIdx]);
+  if (!groups.length) {
+    issues.push({ file: filename, emp: '', date: '', level: 'error', msg: 'No day columns found' });
+    return { file: filename, start: new Date(), end: new Date(), records, issues };
+  }
+
+  // Auto-detect name column: always one before the first HR column
+  const nameCol = groups[0].col - 1;
+
+  let section = 'server';
+  for (let r = metricRowIdx + 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (row.every(c => !(c || '').trim())) continue;
+
+    const raw = norm(row[nameCol] || '');
+if (!raw) continue;
+
+// Normalize slashes to spaces for section matching
+const rawNorm = raw.replace(/[\/\\]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+let matched = false;
+// Check longest keys first to avoid partial matches
+const sectionEntries = Object.entries(SECTION_MAP).sort((a, b) => b[0].length - a[0].length);
+for (const [key, val] of sectionEntries) {
+  const keyNoSpace = key.replace(/\s+/g, '');
+  if (rawNorm === key || rawNorm.startsWith(key + ' ') || rawNorm.startsWith(key + '/')
+      || raw === keyNoSpace || raw.startsWith(keyNoSpace + ' ') || raw.startsWith(keyNoSpace + '/')) {
+    section = val;
+    matched = true;
+    break;
+  }
+}
+// Handle combined "TRAINING\nFOODRUNNER" — if matched training but also contains food runner
+if (matched && section === 'training' && /FOOD\s*RUNNER/.test(rawNorm)) {
+  // Combined header — keep as training since these early files mix both
+  // (both get $7.25/hr anyway)
+}
+if (matched) continue;
+
+    if (isSep(raw)) continue;
+
+    let empHasData = false;
+    for (const grp of groups) {
+      const dt = grp.day;
+      const dtStr = (dt.getMonth()+1) + '/' + dt.getDate() + '/' + dt.getFullYear();
+      const hrs = parseNum(row[grp.col] || '');
+      const tips = parseNum(row[grp.col + 1] || '');
+      const bfr = parseNum(row[grp.col + 2] || '');
+
+      if (hrs == null && tips == null && bfr == null) continue;
+
+      empHasData = true;
+
+      if (tips != null && tips > 0 && hrs == null && section === 'server')
+        issues.push({ file: filename, emp: raw, date: dtStr, level: 'warning', msg: 'Tips present but hours missing' });
+      if (hrs != null && hrs > 18)
+        issues.push({ file: filename, emp: raw, date: dtStr, level: 'warning', msg: 'Hours unusually high: ' + fmtHours(hrs) });
+      if (hrs != null && hrs < 0)
+        issues.push({ file: filename, emp: raw, date: dtStr, level: 'error', msg: 'Negative hours' });
+
+      records.push({ file: filename, section, emp: raw, day: dt, hours: hrs || 0, tips: tips || 0, barFr: bfr || 0 });
+    }
+
+    // Employee listed but all cells empty — still include with zeros
+    if (!empHasData) {
+      records.push({ file: filename, section, emp: raw, day: groups[0].day, hours: 0, tips: 0, barFr: 0 });
+    }
+  }
+
+  const dates = groups.map(g => g.day);
+  return {
+    file: filename,
+    start: new Date(Math.min(...dates)),
+    end: new Date(Math.max(...dates)),
+    records, issues
+  };
+}
+// ══════════════════════════════════════════════════════════════════
+// NAME SIMILARITY (catch manager typos)
+// ══════════════════════════════════════════════════════════════════
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = Math.min(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + (a[i-1] !== b[j-1] ? 1 : 0));
+  return dp[m][n];
+}
+
+function findSimilarNames(names) {
+  const warnings = [];
+  const list = [...names];
+  for (let i = 0; i < list.length; i++) {
+    for (let j = i + 1; j < list.length; j++) {
+      const dist = levenshtein(list[i], list[j]);
+      const maxLen = Math.max(list[i].length, list[j].length);
+      if ((dist === 1 && maxLen >= 4) || (dist === 2 && maxLen >= 6)) {
+        warnings.push(`Similar names detected: "${list[i]}" and "${list[j]}" — could be a typo`);
+      }
+    }
+  }
+  return warnings;
+}
+// ══════════════════════════════════════════════════════════════════
+// AGGREGATION
+// ══════════════════════════════════════════════════════════════════
+function aggregate(sheets) {
+  const sections = {}; SECTION_ORDER.forEach(s => sections[s] = {});
+  let order = 1;
+
+  for (const sheet of sheets) {
+    for (const rec of sheet.records) {
+      const bucket = sections[rec.section] || (sections[rec.section] = {});
+      if (!bucket[rec.emp]) {
+        bucket[rec.emp] = {
+          emp: rec.emp, section: rec.section,
+          weeks: {}, totalHrs: 0, totalTips: 0, totalBarFr: 0, order: order++
+        };
+      }
+      const row = bucket[rec.emp];
+      if (!row.weeks[sheet.file]) row.weeks[sheet.file] = { hours: 0, tips: 0, barFr: 0 };
+      const wk = row.weeks[sheet.file];
+      wk.hours += rec.hours; wk.tips += rec.tips; wk.barFr += rec.barFr;
+      row.totalHrs += rec.hours; row.totalTips += rec.tips; row.totalBarFr += rec.barFr;
+    }
+  }
+  return sections;
+}
+
+function getRate(emp, section) {
+  if (section === 'food_runner' && SPECIAL_FOOD_RUNNER_RATES[emp] !== undefined)
+    return SPECIAL_FOOD_RUNNER_RATES[emp];
+  return RATES[section] || 0;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// TIP-OUT ANALYSIS
+// ══════════════════════════════════════════════════════════════════
+function buildTipOutAnalysis(sheets) {
+  const daily = {};
+
+  for (const sheet of sheets) {
+    for (const rec of sheet.records) {
+      const dk = rec.day.toISOString().slice(0, 10);
+      if (!daily[dk]) daily[dk] = { date: rec.day, barFrPool: 0, frHrs: 0, frEarnings: 0, frNames: [], serverBarFr: {} };
+      if (rec.section === 'server') {
+        daily[dk].barFrPool += rec.barFr;
+        if (rec.barFr > 0) {
+          if (!daily[dk].serverBarFr[rec.emp]) daily[dk].serverBarFr[rec.emp] = 0;
+          daily[dk].serverBarFr[rec.emp] += rec.barFr;
+        }
+      }
+      if (rec.section === 'food_runner' && rec.hours > 0) {
+        const rate = getRate(rec.emp, 'food_runner');
+        daily[dk].frHrs += rec.hours;
+        daily[dk].frEarnings += round2(rec.hours * rate);
+        daily[dk].frNames.push(rec.emp);
+      }
+    }
+  }
+  return daily;
+}
+
+function renderTipOutTable(daily) {
+  const days = Object.values(daily).sort((a, b) => a.date - b.date);
+  if (!days.length) return '';
+
+  let totalPool = 0, totalFrEarn = 0;
+  let L = '<h2>Tip-Out Verification (BAR/FR)</h2>';
+  L += '<p style="font-size:11px;color:#666;margin-bottom:6px;">Compares total BAR/FR deducted from servers vs food runner hourly earnings per day.</p>';
+  L += '<table class="tip-table"><thead><tr>';
+  L += '<th>DATE</th><th>SERVER BAR/FR POOL</th><th>FOOD RUNNER EARNINGS</th><th>DIFFERENCE</th><th>STATUS</th><th>DETAILS</th>';
+  L += '</tr></thead><tbody>';
+
+  for (const d of days) {
+    if (d.barFrPool === 0 && d.frEarnings === 0) continue;
+    const diff = round2(d.barFrPool - d.frEarnings);
+    totalPool += d.barFrPool;
+    totalFrEarn += d.frEarnings;
+
+    const cls = Math.abs(diff) < 0.01 ? 'match-ok' : 'match-bad';
+    const status = Math.abs(diff) < 0.01 ? 'MATCH' : (diff > 0 ? 'SURPLUS +' + fmtMoney(diff) : 'SHORT ' + fmtMoney(diff));
+
+    const details = [];
+    for (const [name, amt] of Object.entries(d.serverBarFr)) {
+      details.push(`${name}: ${fmtMoney(amt)}`);
+    }
+    if (d.frNames.length) details.push(`FR: ${[...new Set(d.frNames)].join(', ')} (${fmtHours(d.frHrs)} hrs)`);
+
+    L += '<tr>';
+    L += `<td>${fmtDate(d.date)}</td>`;
+    L += `<td>${fmtMoney(d.barFrPool)}</td>`;
+    L += `<td>${fmtMoney(d.frEarnings)}</td>`;
+    L += `<td>${fmtMoney(Math.abs(diff))}</td>`;
+    L += `<td class="${cls}">${status}</td>`;
+    L += `<td style="text-align:left;font-size:10px">${details.join(' | ')}</td>`;
+    L += '</tr>';
+  }
+
+  const totalDiff = round2(totalPool - totalFrEarn);
+  const totalCls = Math.abs(totalDiff) < 0.01 ? 'match-ok' : 'match-bad';
+  L += `<tr class="totals-row">`;
+  L += `<td>TOTAL</td><td>${fmtMoney(totalPool)}</td><td>${fmtMoney(totalFrEarn)}</td>`;
+  L += `<td>${fmtMoney(Math.abs(totalDiff))}</td>`;
+  L += `<td class="${totalCls}">${Math.abs(totalDiff) < 0.01 ? 'MATCH' : (totalDiff > 0 ? 'SURPLUS' : 'SHORT')}</td><td></td>`;
+  L += '</tr></tbody></table>';
+  return L;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// DASHBOARD
+// ══════════════════════════════════════════════════════════════════
+function renderDashboard(allSections, sheets) {
+  let totalLabor = 0, totalTips = 0, totalHrs = 0, headcount = 0, totalBarFr = 0;
+  const empSet = new Set();
+
+  for (const [sec, emps] of Object.entries(allSections)) {
+    for (const [emp, row] of Object.entries(emps)) {
+      const rate = getRate(emp, sec);
+      totalLabor += round2(row.totalHrs * rate);
+      totalTips += row.totalTips;
+      totalHrs += row.totalHrs;
+      totalBarFr += row.totalBarFr;
+      empSet.add(emp);
+    }
+  }
+  headcount = empSet.size;
+  const totalPayout = round2(totalLabor + totalTips);
+  const avgPerHr = totalHrs > 0 ? round2((totalLabor + totalTips) / totalHrs) : 0;
+
+  let L = '<div class="dashboard">';
+  L += `<div class="dash-card"><div class="label">Employees</div><div class="value">${headcount}</div><div class="sub">this period</div></div>`;
+  L += `<div class="dash-card"><div class="label">Total Hours</div><div class="value">${fmtHours(totalHrs)}</div><div class="sub">all sections</div></div>`;
+  L += `<div class="dash-card"><div class="label">Total Labor Cost</div><div class="value">${fmtMoney(totalLabor)}</div><div class="sub">hourly wages</div></div>`;
+  L += `<div class="dash-card"><div class="label">Total Tips (Net)</div><div class="value">${fmtMoney(totalTips)}</div><div class="sub">after BAR/FR</div></div>`;
+  L += `<div class="dash-card"><div class="label">Total BAR/FR</div><div class="value">${fmtMoney(totalBarFr)}</div><div class="sub">tip-out pool</div></div>`;
+  L += `<div class="dash-card"><div class="label">Total Payout</div><div class="value">${fmtMoney(totalPayout)}</div><div class="sub">wages + tips</div></div>`;
+  L += `<div class="dash-card"><div class="label">Avg $/Hr</div><div class="value">${fmtMoney(avgPerHr)}</div><div class="sub">effective rate</div></div>`;
+  L += `<div class="dash-card"><div class="label">Gross Tips</div><div class="value">${fmtMoney(round2(totalTips + totalBarFr))}</div><div class="sub">before tip-out</div></div>`;
+  L += '</div>';
+  return L;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// REPORT RENDERING
+// ══════════════════════════════════════════════════════════════════
+let currentSheets = null;
+let currentSections = null;
+
+function renderReport(sheets) {
+  sheets.sort((a, b) => a.start - b.start || a.file.localeCompare(b.file));
+  currentSheets = sheets;
+  const allSections = aggregate(sheets);
+  currentSections = allSections;
+
+  const allNames = new Set();
+  for (const sec of Object.values(allSections))
+    for (const emp of Object.keys(sec)) allNames.add(emp);
+  const nameWarnings = findSimilarNames(allNames);
+
+  const allIssues = sheets.flatMap(s => s.issues);
+  nameWarnings.forEach(w => allIssues.push({ file: '', emp: '', date: '', level: 'warning', msg: w }));
+
+  const issueIdx = {};
+  for (const i of allIssues) {
+    const key = norm(i.emp);
+    if (key) { if (!issueIdx[key]) issueIdx[key] = []; issueIdx[key].push(i); }
+  }
+
+  const crossTotals = {};
+  for (const [sec, emps] of Object.entries(allSections)) {
+    for (const [emp, row] of Object.entries(emps)) {
+      if (!crossTotals[emp]) crossTotals[emp] = { hours: 0, pay: 0, tips: 0 };
+      const rate = getRate(emp, sec);
+      crossTotals[emp].hours += row.totalHrs;
+      crossTotals[emp].pay += round2(row.totalHrs * rate);
+      crossTotals[emp].tips += row.totalTips;
+    }
+  }
+
+  const srcList = sheets.map(s =>
+    `<li>${esc(s.file)} &rarr; ${fmtRange(s.start, s.end)}</li>`
+  ).join('');
+
+  let html = '';
+  html += '<div class="info-box">';
+  html += `<b>Source files:</b><ul>${srcList}</ul>`;
+  html += `<p style="margin-top:6px">Rates: server ${fmtMoney(RATES.server)}/hr, `;
+  html += `food runner ${fmtMoney(RATES.food_runner)}/hr (WILKS ${fmtMoney(SPECIAL_FOOD_RUNNER_RATES.WILKS || RATES.food_runner)}), `;
+  html += `training ${fmtMoney(RATES.training)}/hr. `;
+  html += `Min wage ${fmtMoney(MINIMUM_WAGE)}. OT after ${OT_THRESHOLD} hrs/week.</p>`;
+  html += '<p style="margin-top:4px;color:#888">Click on SIGNATURE cells to toggle DD / CHECK.</p>';
+  html += '</div>';
+
+  // Dashboard
+  html += renderDashboard(allSections, sheets);
+
+  let num = 1;
+  for (const sec of SECTION_ORDER) {
+    const rows = Object.values(allSections[sec] || {}).sort((a, b) => a.order - b.order);
+    if (!rows.length) continue;
+    const result = renderSection(sec, rows, sheets, allSections, issueIdx, crossTotals, num);
+    html += result.html;
+    num = result.nextNum;
+  }
+
+  // Tip-Out Verification
+  const tipOutDaily = buildTipOutAnalysis(sheets);
+  html += renderTipOutTable(tipOutDaily);
+
+  // Validation table
+  if (allIssues.length) {
+    html += '<h2>Validation</h2>';
+    html += '<table class="val-table"><thead><tr>';
+    html += '<th>FILE</th><th>EMPLOYEE</th><th>DATE</th><th>LEVEL</th><th>MESSAGE</th>';
+    html += '</tr></thead><tbody>';
+    for (const i of allIssues) {
+      html += '<tr>';
+      html += `<td>${esc(i.file)}</td><td>${esc(i.emp)}</td><td>${esc(i.date)}</td>`;
+      html += `<td>${esc(i.level.toUpperCase())}</td><td>${esc(i.msg)}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+  } else {
+    html += '<h2>Validation</h2><p style="color:#666">No issues found.</p>';
+  }
+
+  document.getElementById('report-content').innerHTML = html;
+  document.getElementById('report').style.display = 'block';
+  document.getElementById('status').textContent = `${sheets.length} file(s) processed, ${allNames.size} employees`;
+
+  document.querySelectorAll('td.sig').forEach(td => {
+    td.addEventListener('click', () => {
+      const emp = td.dataset.emp;
+      togglePayment(emp);
+      renderReport(currentSheets);
+    });
+  });
+}
+
+function round2(v) { return Math.round(v * 100) / 100; }
+
+function renderSection(section, rows, sheets, allSections, issueIdx, crossTotals, startNum) {
+  let L = '';
+  L += `<h2>${esc(SECTION_LABELS[section])}</h2>`;
+  L += '<table><thead>';
+
+  // Header row 1
+  L += '<tr>';
+  L += '<th rowspan="3">#</th><th rowspan="3">EMPLOYEE\'S</th>';
+  sheets.forEach((_, i) => { L += `<th colspan="2">WEEK ${i+1}</th>`; });
+  const extraCols = ['TOTAL HR','TOTAL HR $','TOTAL TIP','TOTAL PAYOUT','SIGNATURE','NOTES'];
+  extraCols.forEach(c => { L += `<th rowspan="3">${c}</th>`; });
+  L += '</tr>';
+
+  // Header row 2
+  L += '<tr>';
+  sheets.forEach(s => { L += `<th colspan="2">${fmtRange(s.start, s.end)}</th>`; });
+  L += '</tr>';
+
+  // Header row 3
+  L += '<tr>';
+  sheets.forEach(() => { L += '<th>HR</th><th>TIPs</th>'; });
+  L += '</tr></thead><tbody>';
+
+  let num = startNum;
+  const secTotals = {
+    weeks: {}, hours: 0, tips: 0, barFr: 0, hrPay: 0, payout: 0
+  };
+  sheets.forEach(s => { secTotals.weeks[s.file] = { hours: 0, tips: 0 }; });
+
+  for (const row of rows) {
+    const emp = row.emp;
+    const rate = getRate(emp, section);
+    const payment = getPayment(emp);
+    const hrPay = round2(row.totalHrs * rate);
+    const totalPayout = round2(hrPay + row.totalTips);
+
+    // Signature
+    let sig = '';
+    if (section === 'training' || section === 'food_runner') {
+      if (allSections.server && allSections.server[emp]) {
+        sig = '----included on the tips-----';
+      } else {
+        sig = payment === 'DD' ? 'DONE : DD' : '';
+      }
+    } else {
+      sig = payment === 'DD' ? 'DONE : DD' : '';
+    }
+
+    // Notes
+    const notes = [];
+    if (payment === 'CHECK' && section === 'server')
+      notes.push('<----- PAY BY CHECK');
+
+        if (section === 'server') {
+      for (const [otherSec, otherLabel] of [['training', 'training'], ['food_runner', 'food runner']]) {
+        const otherRow = (allSections[otherSec] || {})[emp];
+        if (otherRow && otherRow.totalHrs > 0) {
+          const otherRate = getRate(emp, otherSec);
+          const otherPay = round2(otherRow.totalHrs * otherRate);
+          const combined = round2(totalPayout + otherPay);
+          notes.push(`plus ${fmtMoney(otherPay)} for ${fmtHours(otherRow.totalHrs)} hours ${otherLabel}, new total ${fmtMoney(combined)}`);
+        }
+      }
+
+      // Check if effective rate meets minimum wage
+      if (row.totalHrs > 0) {
+        const effectiveRate = totalPayout / row.totalHrs;
+        if (effectiveRate < MINIMUM_WAGE) {
+          const extraNeeded = round2(MINIMUM_WAGE * row.totalHrs - totalPayout);
+          notes.push(`plus ${fmtMoney(extraNeeded)} to meet minimum wage (${fmtMoney(MINIMUM_WAGE)}/hr × ${fmtHours(row.totalHrs)} hrs)`);
+        } else {
+          // Above min wage — check for OT premium
+          let otHrs = 0;
+          for (const sheet of sheets) {
+            const wk = row.weeks[sheet.file];
+            if (wk && wk.hours > OT_THRESHOLD) otHrs += wk.hours - OT_THRESHOLD;
+          }
+          if (otHrs > 0) {
+            const otPay = round2(otHrs * rate * OT_MULTIPLIER);
+            notes.push(`plus ${fmtMoney(otPay)} for ${fmtHours(otHrs)} hours overtime`);
+          }
+        }
+      }
+    }
+
+    const empIssues = issueIdx[emp] || [];
+    for (const issue of empIssues) {
+      const msg = issue.date ? `${issue.date}: ${issue.msg}` : issue.msg;
+      if (!notes.includes(msg)) notes.push(msg);
+    }
+
+    let cls = '';
+    if (notes.some(n => n.includes('MINIMUM WAGE'))) cls = 'issue-row';
+    else if (payment === 'CHECK' && section === 'server') cls = 'check-row';
+    else if (notes.length) cls = 'issue-row';
+
+    L += `<tr${cls ? ' class="'+cls+'"' : ''}>`;
+    L += `<td>${num}</td><td>${esc(emp)}</td>`;
+
+    for (const sheet of sheets) {
+      const wk = row.weeks[sheet.file] || { hours: 0, tips: 0 };
+      L += `<td>${fmtHours(wk.hours)}</td><td>${fmtMoney(wk.tips)}</td>`;
+      secTotals.weeks[sheet.file].hours += wk.hours;
+      secTotals.weeks[sheet.file].tips += wk.tips;
+    }
+
+    L += `<td>${fmtHours(row.totalHrs)}</td>`;
+    L += `<td>${fmtMoney(hrPay)}</td>`;
+    L += `<td>${fmtMoney(row.totalTips)}</td>`;
+    L += `<td>${fmtMoney(totalPayout)}</td>`;
+    L += `<td class="sig" data-emp="${esc(emp)}">${esc(sig)}</td>`;
+    L += `<td class="notes-col">${notes.map(n => esc(n)).join('<br>')}</td>`;
+    L += '</tr>';
+
+    secTotals.hours += row.totalHrs;
+    secTotals.tips += row.totalTips;
+    secTotals.barFr += row.totalBarFr;
+    secTotals.hrPay += hrPay;
+    secTotals.payout += totalPayout;
+    num++;
+  }
+
+  // Totals row
+  L += '<tr class="totals-row"><td></td><td>SECTION TOTAL</td>';
+  for (const sheet of sheets) {
+    const wk = secTotals.weeks[sheet.file];
+    L += `<td>${fmtHours(wk.hours)}</td><td>${fmtMoney(wk.tips)}</td>`;
+  }
+  L += `<td>${fmtHours(secTotals.hours)}</td>`;
+  L += `<td>${fmtMoney(secTotals.hrPay)}</td>`;
+  L += `<td>${fmtMoney(secTotals.tips)}</td>`;
+  L += `<td>${fmtMoney(secTotals.payout)}</td>`;
+  L += '<td></td><td></td></tr>';
+
+  L += '</tbody></table>';
+  return { html: L, nextNum: num };
+}
+
+// ══════════════════════════════════════════════════════════════════
+// COPY TO CLIPBOARD
+// ══════════════════════════════════════════════════════════════════
+function copyReport() {
+  const content = document.getElementById('report-content');
+  const range = document.createRange();
+  range.selectNodeContents(content);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  document.execCommand('copy');
+  sel.removeAllRanges();
+  document.getElementById('status').textContent = 'Copied! Paste into Excel with Ctrl+V';
+  setTimeout(() => { document.getElementById('status').textContent = ''; }, 3000);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// FILE HANDLING
+// ══════════════════════════════════════════════════════════════════
+const pendingFiles = {};
+
+function updateFileList() {
+  const names = Object.keys(pendingFiles);
+  const listEl = document.getElementById('file-list');
+  const btn = document.getElementById('analyze-btn');
+  if (!names.length) {
+    listEl.innerHTML = '';
+    btn.style.display = 'none';
+    return;
+  }
+  listEl.innerHTML = '<b>Files loaded (' + names.length + '):</b><br>' +
+    names.map(n => '✔ ' + esc(n)).join('<br>');
+  btn.style.display = 'inline-block';
+  btn.disabled = false;
+  btn.textContent = '⚡ Analyze Payroll';
+}
+
+function handleFiles(files) {
+  // Hide previous results/errors
+  document.getElementById('report').style.display = 'none';
+  document.getElementById('error-box').style.display = 'none';
+
+  for (const file of files) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      pendingFiles[file.name] = e.target.result;
+      updateFileList();
+    };
+    reader.onerror = () => {
+      showError('Failed to read file: ' + file.name);
+    };
+    reader.readAsText(file);
+  }
+}
+
+function runAnalysis() {
+  const btn = document.getElementById('analyze-btn');
+  btn.disabled = true;
+  btn.textContent = 'Processing...';
+  document.getElementById('error-box').style.display = 'none';
+
+  try {
+    const names = Object.keys(pendingFiles);
+    if (!names.length) {
+      showError('No files loaded. Please select or drop CSV files first.');
+      btn.disabled = false;
+      btn.textContent = '⚡ Analyze Payroll';
+      return;
+    }
+
+    const sheets = [];
+    for (const [name, content] of Object.entries(pendingFiles)) {
+      const sheet = parseSheet(name, content);
+      sheets.push(sheet);
+    }
+
+    // Check if any sheet had zero records (likely parse failure)
+    const emptySheets = sheets.filter(s => s.records.length === 0);
+
+    if (emptySheets.length === sheets.length) {
+      let msg = 'No employee data found in any file.\n\n';
+      msg += 'Possible causes:\n';
+      msg += '• Files are not in the expected CSV format\n';
+      msg += '• Missing HR/TIPs/BAR/FR header row\n';
+      msg += '• Missing date row above the header\n\n';
+      for (const s of sheets) {
+        msg += s.file + ':\n';
+        if (s.issues.length) {
+          s.issues.forEach(i => { msg += '  ' + i.level.toUpperCase() + ': ' + i.msg + '\n'; });
+        } else {
+          msg += '  (no specific errors detected)\n';
+        }
+      }
+      showError(msg);
+      btn.disabled = false;
+      btn.textContent = '⚡ Analyze Payroll';
+      return;
+    }
+
+    renderReport(sheets);
+    btn.textContent = '✔ Done';
+  } catch (err) {
+    showError('Unexpected error during analysis:\n\n' + err.message + '\n\nStack:\n' + err.stack);
+    btn.disabled = false;
+    btn.textContent = '⚡ Analyze Payroll';
+  }
+}
+
+function showError(msg) {
+  const box = document.getElementById('error-box');
+  document.getElementById('error-detail').textContent = msg;
+  box.style.display = 'block';
+  box.scrollIntoView({ behavior: 'smooth' });
+}
+
+// Drop zone
+const dropZone = document.getElementById('drop-zone');
+dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('drag-over'); });
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  handleFiles([...e.dataTransfer.files].filter(f => f.name.toLowerCase().endsWith('.csv')));
+});
+
+document.getElementById('file-input').addEventListener('change', (e) => {
+  handleFiles([...e.target.files].filter(f => f.name.toLowerCase().endsWith('.csv')));
+});
+</script>
+</body>
+</html>
